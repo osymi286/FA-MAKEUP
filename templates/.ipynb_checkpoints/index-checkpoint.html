@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>COSMAX-FA-맞춤형MU</title>
+  <style>
+    table { border-collapse:collapse; width:100%; }
+    th, td { border:1px solid #ccc; padding:4px; text-align:center; }
+    th { background:#f2f2f2; }
+
+    /* Scroll containers */
+    .scroll { max-height:600px; overflow:auto; border:1px solid #ddd; padding:5px; }
+    .table-container {
+      overflow-y: auto;
+      max-height: 600px;
+    }
+    /* 고정 헤더 */
+    .table-container table thead th,
+    .scroll table thead th {
+      position: sticky;
+      top: 0;
+      background: #f2f2f2;
+      z-index: 2;
+    }
+
+    /* Grid 레이아웃 (5:30:5:55:5) */
+    .filter-section {
+      display: grid;
+      grid-template-columns: 5fr 30fr 5fr 55fr 5fr;
+      align-items: start;
+      margin-bottom: 24px;
+    }
+    .filter-section > div { }
+    .graph-container { }
+    .table-container { }
+
+    /* 반응형: 화면 ≤1152px 이면 세로 스택 */
+    @media (max-width: 1152px) {
+      .filter-section {
+        display: block;
+      }
+      .filter-section .graph-container,
+      .filter-section .table-container {
+        width: 100% !important;
+        margin-bottom: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>🤍코스맥스 FA팀 맞춤형 MU 측색 분포(ver.1)</h1>
+
+  <!-- 1) 파일 업로드 -->
+  <form method="post" enctype="multipart/form-data">
+    <input type="file" name="file" required>
+    <input type="submit" value="파일 업로드">
+  </form>
+
+  {% if sheet_names %}
+    <h2>조회 대상 시트, 타겟값 입력, 필터링 조건 설정</h2>
+    <form method="post">
+      <label>① 시트 선택:
+        <select name="sheet">
+          {% for s in sheet_names %}
+            <option value="{{s}}" {% if s==selected_sheet %}selected{% endif %}>{{s}}</option>
+          {% endfor %}
+        </select>
+      </label><br>
+      <label>② 타겟 L, a*, b* 입력:
+        <input name="input_values" placeholder="50,0,0">
+      </label><br>
+      <label>
+        L ≤ <input name="L_thr" value="{{L_thr}}" size="4">
+        C ≤ <input name="C_thr" value="{{C_thr}}" size="4">
+        h ≤ <input name="h_thr" value="{{h_thr}}" size="4">
+        dE ≤ <input name="dE_thr" value="{{dE_thr}}" size="4">
+      </label><br><br>
+      <button name="action" value="시트 값으로 그래프 보기">시트 전체 분포(3D)</button>
+      <button name="action" value="입력값 위치 확인">타겟값 위치 확인(3D)</button>
+    </form>
+  {% endif %}
+
+  <!-- 2D 그래프 & 필터 테이블 -->
+  {% if graph_2d or filt_data %}
+    <div class="filter-section">
+      <div></div>
+      <div class="graph-container">
+        {% if graph_2d %}
+          <h2>Filtered 2D (h vs ITA)</h2>
+          {{ graph_2d|safe }}
+        {% endif %}
+      </div>
+      <div></div>
+      <div class="table-container">
+        {% if filt_data %}
+          <h2>Filtered Table (≤ thresholds)</h2>
+          <table>
+            <thead>
+              <tr>{% for c in filt_cols %}<th>{{c}}</th>{% endfor %}</tr>
+            </thead>
+            <tbody>
+              {% for r in filt_data %}
+                <tr>
+                  {% for c in filt_cols %}
+                    {% if c=='HEX' %}
+                      {% set hexv = r[c] or '' %}
+                      <td style="background-color: {{ hexv.startswith('#') and hexv or '#' + hexv }};">
+                        {{ hexv }}
+                      </td>
+                    {% else %}
+                      <td>{{ r[c] }}</td>
+                    {% endif %}
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% endif %}
+      </div>
+      <div></div>
+    </div>
+  {% endif %}
+
+  <!-- 3D 그래프 & 전체 테이블 -->
+  {% if graph_3d or full_data %}
+    <div class="filter-section">
+      <div></div>
+      <div class="graph-container">
+        {% if graph_3d %}
+          <h2>3D Color Scatter</h2>
+          {{ graph_3d|safe }}
+        {% endif %}
+      </div>
+      <div></div>
+      <div class="table-container">
+        {% if full_data %}
+          <h2>Full Table (dE asc)</h2>
+          <div class="scroll">
+            <table>
+              <thead>
+                <tr>{% for c in full_cols %}<th>{{c}}</th>{% endfor %}</tr>
+              </thead>
+              <tbody>
+                {% for r in full_data %}
+                  <tr>
+                    {% for c in full_cols %}
+                      {% if c=='HEX' %}
+                        {% set hexv = r[c] or '' %}
+                        <td style="background-color: {{ hexv.startswith('#') and hexv or '#' + hexv }};">
+                          {{ hexv }}
+                        </td>
+                      {% else %}
+                        <td>{{ r[c] }}</td>
+                      {% endif %}
+                    {% endfor %}
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+      <div></div>
+    </div>
+  {% endif %}
+</body>
+</html>
+

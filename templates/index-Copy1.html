@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Color Difference Visualization</title>
+  <style>
+    table.dataframe { border-collapse: collapse; width: 100%; }
+    table.dataframe th,
+    table.dataframe td { border: 1px solid #ccc; padding: 4px; text-align: center; }
+    table.dataframe th { background: #f9f9f9; }
+  </style>
+</head>
+<body>
+  <h1>엑셀 파일 업로드 및 시트 선택</h1>
+  <form action="/" method="post" enctype="multipart/form-data">
+    <input type="file" name="file" required>
+    <input type="submit" value="Upload">
+  </form>
+
+  {% if sheet_names %}
+    <h2>시트 선택 및 그래프 생성</h2>
+    <form method="post">
+      <select name="sheet">
+        {% for sheet in sheet_names %}
+          <option value="{{ sheet }}" {% if sheet == selected_sheet %}selected{% endif %}>
+            {{ sheet }}
+          </option>
+        {% endfor %}
+      </select>
+      <label>
+        L, a*, b* 입력 (예: 50,0,0):
+        <input type="text" name="input_values" placeholder="50,0,0">
+      </label>
+      <input type="submit" name="action" value="시트 값으로 그래프 보기">
+      <input type="submit" name="action" value="입력값 위치 확인">
+    </form>
+  {% endif %}
+
+  {% if graph_html %}
+    <h2>3D Color Scatter</h2>
+    {{ graph_html|safe }}
+  {% endif %}
+
+  {% if table_data %}
+    <h2>선택된 시트 내용 (dE 오름차순)</h2>
+    <div style="max-height:400px; overflow-y:auto; border:1px solid #ddd; padding:5px;">
+      <table class="dataframe">
+        <thead>
+          <tr>
+            {% for col in table_columns %}
+              <th>{{ col }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in table_data %}
+            <tr>
+              {% for col in table_columns %}
+                {% if col == 'HEX' %}
+                  <td style="background-color: {{ row[col] }};">{{ row[col] }}</td>
+                {% else %}
+                  <td>{{ row[col] }}</td>
+                {% endif %}
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</body>
+</html>

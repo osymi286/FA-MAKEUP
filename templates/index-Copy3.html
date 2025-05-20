@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Color DV</title>
+  <style>
+    table{border-collapse:collapse;width:100%;}
+    th,td{border:1px solid#ccc;padding:4px;text-align:center;}
+    th{background:#f2f2f2;}
+    .scroll{max-height:300px;overflow:auto;border:1px solid#ddd;padding:5px;}
+  </style>
+</head>
+<body>
+  <h1>코스맥스 FA팀 맞춤형 파운데이션 측색 분포(ver.1)</h1>
+  <!-- 1) 파일 업로드 전용 -->
+  <form method="post" enctype="multipart/form-data">
+    <input type="file" name="file" required>
+    <input type="submit" value="파일 업로드">
+  </form>
+
+  {% if sheet_names %}
+    <h2>조회 대상 시트, 타겟값 입력, 필터링 조건 설정</h2>
+    <!-- 2) 시트/입력값/threshold 폼 (파일 없음) -->
+    <form method="post">
+      <label>① 시트 선택:
+        <select name="sheet">
+          {% for s in sheet_names %}
+            <option value="{{s}}" {% if s==selected_sheet %}selected{% endif %}>{{s}}</option>
+          {% endfor %}
+        </select>
+      </label><br>
+
+      <label>② 타겟 L, a*, b* 입력: <input name="input_values" placeholder="50,0,0"></label><br>
+
+      <label>
+        L ≤ <input name="L_thr" value="{{L_thr}}" size="4">
+        C ≤ <input name="C_thr" value="{{C_thr}}" size="4">
+        h ≤ <input name="h_thr" value="{{h_thr}}" size="4">
+        dE ≤ <input name="dE_thr" value="{{dE_thr}}" size="4">
+      </label><br><br>
+
+      <button name="action" value="시트 값으로 그래프 보기">시트 전체 분포(3D)</button>
+      <button name="action" value="입력값 위치 확인">타겟값 위치 확인(3D)</button>
+    </form>
+  {% endif %}
+
+  {% if graph_2d %}
+    <h2>필터링 데이터 2차원 그래프(h-ITA graph)</h2>
+    <div id="graph2d-container"
+         style="width:80%; max-width:600px; height:800px; margin:auto;">
+      {{ graph_2d|safe }}
+    </div>
+  {% endif %}
+
+  {% if filt_data %}
+    <h2>필터 조건을 만족하는 데이터</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            {% for c in filt_cols %}<th>{{ c }}</th>{% endfor %}
+         </tr>
+        </thead>
+        <tbody>
+          {% for r in filt_data %}
+            <tr>
+                {% for c in filt_cols %}
+                {% if c == 'HEX' %}
+                  {% set hexv = r[c] or '' %}
+                  <td style="background-color:
+                      {{ ('#' + hexv) if not hexv.startswith('#') else hexv }};
+                  ">
+                    {{ hexv }}
+                  </td>
+                {% else %}
+                  <td>{{ r[c] }}</td>
+                {% endif %}
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  {% if graph_3d %}
+    <h2>3D Color Scatter</h2>
+    {{ graph_3d | safe }}
+  {% endif %}
+
+  {% if full_data %}
+    <h2>Full Table (dE asc)</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>{% for c in full_cols %}<th>{{c}}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          {% for r in full_data %}
+            <tr>
+              {% for c in full_cols %}
+                <td {% if c=='HEX' %}style="background:{{r[c]}}"{% endif %}>{{r[c]}}</td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</body>
+</html>

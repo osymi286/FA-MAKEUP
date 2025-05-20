@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Color DV</title>
+  <style>
+    table{border-collapse:collapse;width:100%;}
+    th,td{border:1px solid#ccc;padding:4px;text-align:center;}
+    th{background:#f2f2f2;}
+    .scroll-table{max-height:300px;overflow:auto;border:1px solid #ddd;padding:5px;}
+  </style>
+</head>
+<body>
+  <h1>엑셀 업로드</h1>
+  <!-- 1) 업로드 전용 폼 -->
+  <form method="post" enctype="multipart/form-data">
+    <input type="file" name="file" required>
+    <input type="submit" value="파일 업로드">
+  </form>
+
+  {% if sheet_names %}
+    <h2>그래프 & 테이블 제어</h2>
+    <!-- 2) 그래프/테이블 제어 전용 폼 (여기엔 file input이 없음!) -->
+    <form method="post">
+      <!-- 시트 선택 유지 -->
+      <label>시트:
+        <select name="sheet">
+          {% for s in sheet_names %}
+            <option value="{{s}}" {% if s==selected_sheet %}selected{% endif %}>{{s}}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <br>
+
+      <!-- L,a*,b* 입력 -->
+      <label>L, a*, b*:
+        <input type="text" name="input_values" placeholder="50,0,0">
+      </label>
+      <br>
+
+      <!-- threshold 입력 -->
+      <label>
+        L ≤ <input name="L_thr" value="{{L_thr}}" size="4">
+        C ≤ <input name="C_thr" value="{{C_thr}}" size="4">
+        h ≤ <input name="h_thr" value="{{h_thr}}" size="4">
+        dE ≤ <input name="dE_thr" value="{{dE_thr}}" size="4">
+      </label>
+      <br>
+
+      <!-- 액션 버튼 -->
+      <button name="action" value="시트 값으로 그래프 보기">시트 값으로 그래프 보기</button>
+      <button name="action" value="입력값 위치 확인">입력값 위치 확인</button>
+    </form>
+  {% endif %}
+
+  <!-- 필터된 2D 그래프 -->
+  {% if graph_2d %}
+    <h2>필터링 데이터 톤, ITA graph(h-ITA)</h2>
+    {{graph_2d|safe}}
+  {% endif %}
+
+  <!-- 필터된 테이블 -->
+  {% if filt_data %}
+    <h2>필터링 데이터 테이블 (≤ thresholds)</h2>
+    <div class="scroll-table">
+      <table>
+        <thead>
+          <tr>{% for c in filt_cols %}<th>{{c}}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          {% for r in filt_data %}
+            <tr>
+              {% for c in filt_cols %}
+                <td {% if c=='HEX' %}style="background:{{r[c]}}"{% endif %}>{{r[c]}}</td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  <!-- 전체 3D 그래프 -->
+  {% if graph_3d %}
+    <h2>3D Color Scatter</h2>
+    {{graph_3d|safe}}
+  {% endif %}
+
+  <!-- 전체 테이블 -->
+  {% if full_data %}
+    <h2>Full Table (dE asc)</h2>
+    <div class="scroll-table">
+      <table>
+        <thead>
+          <tr>{% for c in full_cols %}<th>{{c}}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          {% for r in full_data %}
+            <tr>
+              {% for c in full_cols %}
+                <td {% if c=='HEX' %}style="background:{{r[c]}}"{% endif %}>{{r[c]}}</td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</body>
+</html>
