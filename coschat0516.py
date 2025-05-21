@@ -3,24 +3,46 @@ import pandas as pd
 import os, math, uuid
 import plotly.graph_objects as go
 import plotly.express as px
+import numpy as np
+from flask_compress import Compress
 
 app = Flask(__name__)
 app.secret_key = 'supersecretkey'
+Compress(app)  # Enable Gzip compression
 
 UPLOAD_FOLDER = os.path.join(os.getcwd(), 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-def ciede2000(L1,A1,B1,L2,A2,B2):
-    C1=math.sqrt(A1**2+B1**2); C2=math.sqrt(A2**2+B2**2); Cm=(C1+C2)/2
-    DL=L2-L1; DC=C2-C1; DA=A2-A1; DB=B2-B1
-    DH=math.sqrt(abs(DA**2+DB**2-DC**2))
-    H1=math.atan2(B1,A1); H2=math.atan2(B2,A2); Hm=(H1+H2)/2
-    T=1-0.17*math.cos(Hm-math.radians(30))+0.24*math.cos(2*Hm)+0.32*math.cos(3*Hm+math.radians(6))-0.20*math.cos(4*Hm-math.radians(63))
-    RT=-2*math.sqrt(Cm**7/(Cm**7+25**7))*math.sin(math.radians(60)*math.exp(-((Hm-math.radians(275))**2)/(math.radians(25)**2)))
-    return math.sqrt(DL**2 + (DC/(1+0.045*Cm))**2 + (DH/(1+0.015*Cm))**2 + RT*DC*DH)
+df_cache = {}  # in-memory cache for Excel data
 
-def calculate_differences(df, L,A,B):
-    return [round(ciede2000(L,A,B, r['L'],r['a*'],r['b*']),4) for _,r in df.iterrows()]
+# Vectorized CIEDE2000 calculation using NumPy
+def calculate_differences_vec(df, L0, A0, B0):
+    L1 = df['L'].to_numpy()
+    A1 = df['a*'].to_numpy()
+    B1 = df['b*'].to_numpy()
+    C0 = np.hypot(A0, B0)
+    C1 = np.hypot(A1, B1)
+    dL = L1 - L0
+    dC = C1 - C0
+    dA = A1 - A0
+    dB = B1 - B0
+    H0 = np.arctan2(B0, A0)
+    H1 = np.arctan2(B1, A1)
+    dH = H1 - H0
+    dH = dH - 2*np.pi * np.floor((dH + np.pi) / (2*np.pi))
+    Cbar = (C0 + C1) / 2
+    Hbar = (H0 + H1) / 2
+    T = (1 - 0.17*np.cos(Hbar - np.radians(30))
+         + 0.24*np.cos(2*Hbar)
+         + 0.32*np.cos(3*Hbar + np.radians(6))
+         - 0.20*np.cos(4*Hbar - np.radians(63)))
+    RT = (-2 * np.sqrt(Cbar**7 / (Cbar**7 + 25**7))
+          * np.sin(np.radians(60) * np.exp(-((Hbar - np.radians(275))**2)/(np.radians(25)**2))))
+    term_L = dL**2
+    term_C = (dC/(1 + 0.045*Cbar))**2
+    term_H = ((dA**2 + dB**2 - dC**2)**0.5 / (1 + 0.015*Cbar))**2
+    dE = np.sqrt(term_L + term_C + term_H + RT * dC * ((dA**2 + dB**2 - dC**2)**0.5))
+    return np.round(dE,4).tolist()
 
 @app.route('/', methods=['GET','POST'])
 def upload_and_process():
@@ -32,38 +54,39 @@ def upload_and_process():
     fp     = session.get('file_path')
     sel    = session.get('selected_sheet')
     L=A=B = 0.0
-
-    # 기본 임계값
+    # Default thresholds
     L_thr, C_thr, h_thr, dE_thr = 1.0, 1.5, 3.0, 2.5
 
-    if request.method=='POST':
-        # 1) 파일 업로드
+    if request.method == 'POST':
+        # 1) File upload
         if 'file' in request.files and request.files['file'].filename:
-            f=request.files['file']
-            ext=f.filename.rsplit('.',1)[-1]
-            name=f"{uuid.uuid4()}.{ext}"
-            path=os.path.join(UPLOAD_FOLDER,name)
+            f = request.files['file']
+            ext = f.filename.rsplit('.',1)[-1]
+            name = f"{uuid.uuid4()}.{ext}"
+            path = os.path.join(UPLOAD_FOLDER, name)
             f.save(path)
-            xls=pd.ExcelFile(path)
-            session['sheet_names']=xls.sheet_names
-            session['file_path']=path
-            session['selected_sheet']=None
+            xls = pd.ExcelFile(path)
+            df_cache[path] = {s: xls.parse(s) for s in xls.sheet_names}
+            session['sheet_names'] = xls.sheet_names
+            session['file_path'] = path
+            session['selected_sheet'] = None
             return redirect(url_for('upload_and_process'))
 
-        # 업로드 안 된 상태면 빈화면
         if not fp or not sheets:
             return render_template('index.html')
 
-        # 2) 시트 선택 유지/설정
+        # 2) Sheet selection caching
         form_s = request.form.get('sheet')
         if form_s:
             sel = form_s
-            session['selected_sheet']=sel
+            session['selected_sheet'] = sel
         elif not sel:
-            sel=sheets[0]
-            session['selected_sheet']=sel
+            sel = sheets[0]
+            session['selected_sheet'] = sel
+        df = df_cache.get(fp, {}).get(sel, pd.DataFrame())
+        df.columns = df.columns.map(str).str.strip()
 
-        # 3) threshold 입력 처리
+        # 3) Threshold inputs
         try:
             L_thr  = float(request.form.get('L_thr')  or L_thr)
             C_thr  = float(request.form.get('C_thr')  or C_thr)
@@ -72,145 +95,80 @@ def upload_and_process():
         except ValueError:
             return "임계값은 숫자로 입력하세요."
 
-        # 4) L,a*,b* 입력 처리
+        # 4) L,a*,b* inputs
         vals = request.form.get('input_values')
         act  = request.form.get('action')
-        xls  = pd.ExcelFile(fp)
-        df   = xls.parse(sel)
-        df.columns = df.columns.map(str).str.strip()
-
-        # 필수 컬럼 확보
-        for c in ['L','a*','b*','sR','sG','sB','HEX']:
-            if c not in df: df[c] = '' if c=='HEX' else 0
-
-        # 입력값 결정
-        if act=="시트 값으로 그래프 보기":
-            L,A,B = df['L'].mean(), df['a*'].mean(), df['b*'].mean()
-        elif act=="입력값 위치 확인" and vals:
+        if act.startswith('시트 값'):
+            L, A, B = df['L'].mean(), df['a*'].mean(), df['b*'].mean()
+        elif act.startswith('입력값') and vals:
             try:
-                L,A,B = map(float, vals.split(','))
+                L, A, B = map(float, vals.split(','))
             except:
                 return "L,a*,b* 형식 오류"
         else:
-            L,A,B = df['L'].mean(), df['a*'].mean(), df['b*'].mean()
+            L, A, B = df['L'].mean(), df['a*'].mean(), df['b*'].mean()
 
-        # 입력값 행 추가
-        m=(df['L']==L)&(df['a*']==A)&(df['b*']==B)
-        if not m.any():
-            new={col:'' for col in df.columns}
+        # Add input row if missing
+        mask = (df['L']==L)&(df['a*']==A)&(df['b*']==B)
+        if not mask.any():
+            new = {c: '' for c in df.columns}
             new.update({'L':L,'a*':A,'b*':B})
-            df=pd.concat([df, pd.DataFrame([new])], ignore_index=True)
+            df = pd.concat([df, pd.DataFrame([new])], ignore_index=True)
 
-        # dE, C, h, ITA 계산
-        df['dE'] = calculate_differences(df, L, A, B)
-        df['C']  = (df['a*']**2 + df['b*']**2)**0.5
-        df['h']  = df.apply(lambda r: math.degrees(math.atan2(r['b*'], r['a*'])), axis=1)
+        # 5) Vectorized dE, C, h, ITA calculation
+        df['dE'] = calculate_differences_vec(df, L, A, B)
+        df['C']  = np.hypot(df['a*'], df['b*'])
+        df['h']  = np.degrees(np.arctan2(df['b*'], df['a*']))
         df['ITA']= df.apply(lambda r: math.degrees(math.atan((r['L']-50)/r['b*'])) if r['b*']!=0 else 0, axis=1)
 
-        # ① 입력값 기준 C, h 계산 (L, A, B 사용)
-        input_C = math.sqrt(A**2 + B**2)
+        input_C = math.hypot(A,B)
         input_h = math.degrees(math.atan2(B, A)) % 360
-        
-        # ② full: 정렬된 전체 DataFrame
+
+        # ② Full sorted DataFrame
         full = df.sort_values('dE').reset_index(drop=True)
         full_cols = full.columns.tolist()
         full_data = full.to_dict('records')
 
-        # 5) ≤ threshold 필터링 (L, A, B 일관 적용)
-        mask = (
-            (full['dE'] <= dE_thr) &
-            (full['L'].sub(L).abs()     <= L_thr) &
-            (full['C'].sub(input_C).abs() <= C_thr) &
-            (full['h'].sub(input_h).abs() <= h_thr)
-        )         
-        filt = full[mask]
-
-        # 필터링 결과 없으면 최소 입력값 행만 사용
-        input_mask = (full['L'] == L) & (full['a*'] == A) & (full['b*'] == B)
-        # 필터 결과가 비어 있으면 입력값만
+        # 5) Threshold filtering
+        filt = full[
+            (full['dE']<=dE_thr) &
+            (full['L'].sub(L).abs()<=L_thr) &
+            (full['C'].sub(input_C).abs()<=C_thr) &
+            (full['h'].sub(input_h).abs()<=h_thr)
+        ]
         if filt.empty:
-            filt = full[input_mask]
-
+            filt = full[(full['L']==L)&(full['a*']==A)&(full['b*']==B)]
         filt_cols = filt.columns.tolist()
         filt_data = filt.to_dict('records')
 
-        # 6) 2D scatter (h vs ITA)
-
-        # record 리스트로 가져오기
-        records = filt.to_dict('records')
-
-        # HEX 로 색목록 생성 (없으면 blue)
+        # 6) 2D scatter with WebGL
+        records = filt_data
         marker_colors_2d = []
+        hover_texts = []
         for rec in records:
-            hexv = rec.get('HEX','') or ''
-            if hexv:
-                # add leading '#' if missing
-                if not hexv.startswith('#'):
-                    hexv = f"#{hexv}"
-                marker_colors_2d.append(hexv)
-            else:
-                marker_colors_2d.append('blue')
-                
-            hover_texts = [
-                rec.get('벌크명') if rec.get('벌크명') else 'Input data'
-                for rec in records
-            ]
+            hexv = str(rec.get('HEX') or '').lstrip('#')
+            marker_colors_2d.append('#'+hexv if hexv else 'blue')
+            hover_texts.append(rec.get('벌크명') or 'Input data')
 
-         
-        # go.Scatter 로 2D 그리기
-        fig2 = go.Figure(data=[go.Scatter(
-            x=filt['h'],
-            y=filt['ITA'],
-            mode='markers',
-            marker=dict(
-                color=marker_colors_2d,
-                size=25.0,        # 크기를 5.0으로
-                opacity=0.9      # 투명도 0.7로
-            ),
-            customdata=hover_texts,
-            hovertemplate='%{customdata}<extra></extra>'
+        fig2 = go.Figure(data=[go.Scattergl(
+            x=filt['h'], y=filt['ITA'], mode='markers',
+            marker=dict(color=marker_colors_2d, size=5, opacity=0.7),
+            customdata=hover_texts, hovertemplate='%{customdata}<extra></extra>'
         )])
         fig2.update_layout(
-            title="Filtered h vs ITA (including input)",
-            plot_bgcolor='#FBFBFB',   # 차트 내부 배경색
-            paper_bgcolor='#FBFBFB',   # 차트 전체 배경색
-            xaxis=dict(
-                title='h',
-                range=[30,90],
-                autorange=False,
-                fixedrange=True,
-                showgrid=False,
-                zeroline=False,
-                showticklabels=True
-            ),
-            yaxis=dict(
-                title='ITA',
-                range=[-90,90],
-                autorange=False,
-                fixedrange=True,
-                showgrid=False,
-                zeroline=False,
-                showticklabels=True
-            ),
+            title="Filtered h vs ITA",
+            width=700, height=800,
+            plot_bgcolor='#FBFBFB', paper_bgcolor='#FBFBFB',
+            xaxis=dict(range=[30,90], autorange=False, fixedrange=True),
+            yaxis=dict(range=[-90,90], autorange=False, fixedrange=True),
             shapes=[
-                # ITA = 0, x from 30 to 90
-                dict(type='line', x0=30, x1=90, y0=0, y1=0, line=dict(color='black', width=1)
-                ),
-                # h = 30, y from -90 to 90
-                dict(type='line',x0=30, x1=30, y0=-90, y1=90, line=dict(color='black', width=3)
-                )
-            ],
-            width=600,
-            height=800
+                dict(type='line', x0=30,x1=90,y0=0,y1=0,line=dict(color='black',width=1)),
+                dict(type='line', x0=30,x1=30,y0=-90,y1=90,line=dict(color='black',width=1))
+            ]
         )
+        graph_2d = fig2.to_html(full_html=False, include_plotlyjs='cdn')
 
-
-        graph_2d = fig2.to_html(
-            full_html=False,
-            include_plotlyjs='cdn'
-        )
-
-        # 7) 3D 전체 scatter
+        # 7) 3D scatter (WebGL by default)
         cols3 = [
             'blue' if (r['L']==L and r['a*']==A and r['b*']==B)
             else f"rgb({r['sR']},{r['sG']},{r['sB']})"
@@ -224,13 +182,8 @@ def upload_and_process():
         graph_3d = fig3.to_html(full_html=False, include_plotlyjs='cdn')
 
     return render_template('index.html',
-        sheet_names=sheets, selected_sheet=sel,
-        graph_2d=graph_2d, filt_cols=filt_cols, filt_data=filt_data,
-        graph_3d=graph_3d, full_cols=full_cols, full_data=full_data,
-        L_thr=L_thr, C_thr=C_thr, h_thr=h_thr, dE_thr=dE_thr
-    )
+                           sheet_names=sheets, selected_sheet=sel,
+                           graph_2d=graph_2d, filt_cols=filt_cols, filt_data=filt_data,
+                           graph_3d=graph_3d, full_cols=full_cols, full_data=full_data,
+                           L_thr=L_thr, C_thr=C_thr, h_thr=h_thr, dE_thr=dE_thr)
 
-
-
-if __name__=='__main__':
-    app.run(debug=True)
