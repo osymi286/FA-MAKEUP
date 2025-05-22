@@ -73,7 +73,7 @@ def upload_and_process():
             session['selected_sheet'] = sel
 
         df = df_cache.get(fp, {}).get(sel, pd.DataFrame())
-        df.columns = df.columns.map(str).str.strip()
+        df.columns = df.columns.astype(str).str.strip()
 
         for col in ['L', 'a*', 'b*', 'sR', 'sG', 'sB', 'HEX']:
             if col not in df:
