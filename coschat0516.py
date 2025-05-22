@@ -46,6 +46,12 @@ def calculate_differences_vec(df, L0, A0, B0):
 
 @app.route('/', methods=['GET','POST'])
 def upload_and_process():
+    hexv = request.form.get('hexv', None)  # 서버에서 hexv 데이터를 수신
+    # hexv를 문자열로 변환
+    hexv_str = str(hexv)  # 정수 또는 다른 형식이라도 문자열로 변환
+    # 템플릿으로 변환된 문자열 전달
+    return render_template('index.html', hexv=hexv_str)
+
     graph_2d = graph_3d = None
     filt_cols = filt_data = None
     full_cols = full_data = None

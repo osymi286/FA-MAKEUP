@@ -145,7 +145,7 @@
                   <tr>
                     {% for c in full_cols %}
                       {% if c=='HEX' %}
-                        {% set hexv = r[c] or '' %}
+                        {% set hexv = (r[c] or '')%}
                         <td style="background-color: {{ hexv.startswith('#') and hexv or '#' + hexv }};">
                           {{ hexv }}
                         </td>
@@ -153,7 +153,7 @@
                         <td>{{ r[c] }}</td>
                       {% endif %}
                     {% endfor %}
-                  </tr>
+                  </tr>                  
                 {% endfor %}
               </tbody>
             </table>
