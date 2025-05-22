@@ -103,7 +103,7 @@
                 <tr>
                   {% for c in filt_cols %}
                     {% if c=='HEX' %}
-                      {% set hexv = r[c] or '' %}
+                      {% set hexv = (r[c]|string) %}
                       <td style="background-color: {{ hexv.startswith('#') and hexv or '#' + hexv }};">
                         {{ hexv }}
                       </td>
@@ -145,7 +145,7 @@
                   <tr>
                     {% for c in full_cols %}
                       {% if c=='HEX' %}
-                        {% set hexv = (r[c] or '')%}
+                        {% set hexv = (r[c]|string) %}
                         <td style="background-color: {{ hexv.startswith('#') and hexv or '#' + hexv }};">
                           {{ hexv }}
                         </td>
